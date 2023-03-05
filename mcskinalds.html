@@ -1,0 +1,197 @@
+<label>Image File:</label><br/>
+<input type="file" id="imageLoader" name="imageLoader"/>
+<canvas id="imageCanvas" width="64" height="64"></canvas>
+<button id="download" onclick="downloadCanvasAsPng();">Download</button>
+<button id="Chainmail" onclick="Chainmail();">Chainmail</button>
+<button id="BlockParts" onclick="BlockParts();">BlockParts</button>
+<script>
+var imageLoader = document.getElementById('imageLoader');
+    imageLoader.addEventListener('change', handleImage, false);
+var canvas = document.getElementById('imageCanvas');
+var ctx = canvas.getContext('2d');
+
+// what I want here is a cuboid class that you give
+// the x,y (or maybe previous cuboids)
+// and the dimensions, and it figures out
+// x, y, w, h for the
+// top, bottom, right, front, left and back
+
+const INNER = false;
+const OUTER = true;
+
+class Rect {
+    constructor(x, y, w, h){
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+    }
+}
+
+class McCuboid {
+    constructor(x, y, w, h, d){
+        // magic
+        this.top = new Rect(x+d, y, w, d);
+        this.bottom = new Rect(x+d+w, y, w, d);
+        this.right = new Rect(x, y+d, d, h);
+        this.front = new Rect(x+d, y+d, w, h);//TODO
+        this.left = new Rect(x+d+w, y+d, d, h);
+        this.back = new Rect(x+d+w+d, y+d, w, h);
+    }
+    rightLimit(){ // returns x + w for the cuboid map
+        return this.back.x + this.back.w;
+    }
+    bottomLimit(){ // returns y + h for the cuboid map
+        return this.back.y + this.back.h;
+    }
+    eachPixelForFace(func, face){
+        for(var j=face.y; j<face.y+face.h; j++){    
+            for(var i=face.x; i<face.x+face.w; i++){
+                func(i, j, face);
+            }
+        }
+    }
+    eachTopPixel(func){
+        this.eachPixelForFace(func, this.top);
+    }
+    eachBottomPixel(func){
+        this.eachPixelForFace(func, this.bottom);
+    }
+    eachRightPixel(func){
+        this.eachPixelForFace(func, this.right);
+    }
+    eachFrontPixel(func){
+        this.eachPixelForFace(func, this.front);
+    }
+    eachLeftPixel(func){
+        this.eachPixelForFace(func, this.left);
+    }
+    eachBackPixel(func){
+        this.eachPixelForFace(func, this.back);
+    }
+    eachPixel(func){
+        this.eachTopPixel(func);
+        this.eachBottomPixel(func);
+        this.eachRightPixel(func);
+        this.eachFrontPixel(func);
+        this.eachLeftPixel(func);
+        this.eachBackPixel(func);
+    }
+}
+
+class BodyPart {
+    constructor(x, y, isOuter, w, h, d){
+        this.cuboid = new McCuboid(x, y, w, h, d);
+        this.isOuter = isOuter;
+    }
+}
+function newHead(x, y, isOuter){
+    return new BodyPart(x, y, isOuter, 8, 8, 8);
+}
+function newLimb(x, y, isOuter){
+    return new BodyPart(x, y, isOuter, 4, 12, 4);
+}
+function newBody(x, y, isOuter){
+    return new BodyPart(x, y, isOuter, 8, 12, 4);
+}
+
+var headInner = newHead(0, 0, INNER);
+var headOuter = newHead(headInner.cuboid.rightLimit(), 0, OUTER);
+
+var r2y = headInner.cuboid.bottomLimit();
+var rightLegInner = newLimb(0, r2y, INNER);
+var bodyInner = newBody(rightLegInner.cuboid.rightLimit(), r2y, INNER);
+var rightArmInner = newLimb(bodyInner.cuboid.rightLimit(), r2y, INNER);
+
+var r3y = rightLegInner.cuboid.bottomLimit();
+var rightLegOuter = newLimb(0, r3y, OUTER);
+var bodyOuter = newBody(rightLegOuter.cuboid.rightLimit(), r3y, OUTER);
+var rightArmOuter = newLimb(bodyOuter.cuboid.rightLimit(), r3y, OUTER);
+
+
+var r4y = rightLegOuter.cuboid.bottomLimit();
+var leftLegOuter = newLimb(0, r4y, OUTER);
+var leftLegInner = newLimb(leftLegOuter.cuboid.rightLimit(), r4y, INNER);
+var leftArmInner = newLimb(leftLegInner.cuboid.rightLimit(), r4y, INNER);
+var leftArmOuter = newLimb(leftArmInner.cuboid.rightLimit(), r4y, OUTER);
+
+
+var bodyParts = [
+    headInner, headOuter,
+    rightLegInner, bodyInner, rightArmInner, 
+    rightLegOuter, bodyOuter, rightArmOuter, 
+    leftLegOuter, leftLegInner, leftArmInner, leftArmOuter
+];
+
+var colours = [
+    // make one for each body part (for visual testing)
+    "rgb(255, 0, 0)", "rgb(128, 0, 0)", 
+    "rgb(0, 255, 0)", "rgb(0, 0, 255)", "rgb(255, 255, 0)", 
+    "rgb(0, 128, 0)", "rgb(0, 0, 128)", "rgb(128, 128, 0)", 
+    "rgb(128, 0, 128)", "rgb(255, 0, 255)", "rgb(0, 255, 255)", "rgb(0, 128, 128)"
+];
+
+
+
+function handleImage(e){
+    var reader = new FileReader();
+    reader.onload = function(event){
+        var img = new Image();
+        img.onload = function(){
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img,0,0);
+        }
+        img.src = event.target.result;
+    }
+    reader.readAsDataURL(e.target.files[0]);     
+}
+
+
+function downloadCanvasAsPng(){
+    downloadURI(canvas.toDataURL("image/png"), "great-skin.png");
+}
+
+function BlockParts(){
+    for(var i=0; i<bodyParts.length; i++){
+        ctx.fillStyle = colours[i];
+        var part = bodyParts[i];
+        part.cuboid.eachPixel((x, y, cuboid) => {
+            ctx.fillRect(x, y, 1, 1);
+        });
+    }
+}
+
+function Chainmail(){
+    var black = "rgba(0, 0, 0, 1)";
+    var colour = "rgba(0, 255, 0, 1)";
+    var transparent = "rgba(0, 0, 0, 0)";
+    for(var i=0; i<bodyParts.length; i++){
+        var part = bodyParts[i];
+        var remainder = part.isOuter ? 1 : 0;
+        part.cuboid.eachPixel((x, y, cuboid) => {
+            var shouldFillBlack = (x+y)%2 == remainder;
+            var shouldFillColour = ! (part.isOuter || shouldFillBlack);
+            if(shouldFillBlack) {
+                ctx.fillStyle = black;
+                ctx.fillRect(x, y, 1, 1);
+            }
+            if(shouldFillColour){
+                ctx.fillStyle = colour;
+                ctx.fillRect(x, y, 1, 1);
+            }
+        });
+    }
+}
+
+function downloadURI(uri, name) {
+  var link = document.createElement("a");
+  link.download = name;
+  link.href = uri;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  delete link;
+}
+
+</script>
